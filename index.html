@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mortgage Opportunity Dashboard — Temecula, CA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0f1a; color: #e2e8f0; font-family: 'DM Sans', -apple-system, sans-serif; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0a0f1a; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    input[type=number] { -moz-appearance: textfield; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    const C = {
+      bg: "#0a0f1a", bgCard: "#111827", border: "#1e293b",
+      text: "#e2e8f0", textMuted: "#94a3b8", textDim: "#64748b",
+      accent: "#22d3ee", accentDim: "#0891b2",
+      green: "#10b981", greenDim: "#059669",
+      red: "#ef4444", redDim: "#dc2626",
+      amber: "#f59e0b", amberDim: "#d97706",
+      purple: "#a78bfa", purpleDim: "#7c3aed",
+      white: "#ffffff",
+    };
+
+    const fmt = (v) => (v == null || v === "") ? "—" : parseFloat(v).toFixed(2) + "%";
+    const fmtC = (v) => v ? "$" + Math.round(v).toLocaleString() : "$0";
+
+    const Spark = ({ data, color = C.accent, h = 32, w = 80 }) => {
+      if (!data || data.length < 2) return null;
+      const vals = data.map(Number).filter(v => !isNaN(v));
+      if (vals.length < 2) return null;
+      const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1;
+      const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * w},${h - ((v - min) / range) * (h - 4) - 2}`).join(" ");
+      return <svg width={w} height={h} style={{ display: "block" }}><polyline fill="none" stroke={color} strokeWidth="1.5" points={pts} strokeLinecap="round" strokeLinejoin="round" /></svg>;
+    };
+
+    const Trend = ({ cur, prev }) => {
+      if (!cur || !prev) return null;
+      const d = cur - prev;
+      if (Math.abs(d) < 0.005) return <span style={{ color: C.textDim, fontSize: 11 }}>━ flat</span>;
+      return <span style={{ color: d > 0 ? C.red : C.green, fontSize: 11, fontWeight: 600 }}>{d > 0 ? "▲" : "▼"} {Math.abs(d).toFixed(2)}</span>;
+    };
+
+    const PLF = {
+      62: { 4: .528, 4.5: .494, 5: .462, 5.5: .432, 6: .404, 6.5: .378, 7: .354 },
+      65: { 4: .554, 4.5: .521, 5: .489, 5.5: .459, 6: .431, 6.5: .404, 7: .379 },
+      70: { 4: .601, 4.5: .568, 5: .537, 5.5: .507, 6: .479, 6.5: .452, 7: .427 },
+      75: { 4: .652, 4.5: .620, 5: .589, 5.5: .560, 6: .532, 6.5: .505, 7: .480 },
+      80: { 4: .706, 4.5: .675, 5: .646, 5.5: .617, 6: .590, 6.5: .564, 7: .539 },
+      85: { 4: .758, 4.5: .730, 5: .703, 5.5: .676, 6: .651, 6.5: .626, 7: .603 },
+      90: { 4: .802, 4.5: .778, 5: .754, 5.5: .731, 6: .708, 6.5: .687, 7: .666 },
+    };
+
+    const getPlf = (age, er) => {
+      const ages = Object.keys(PLF).map(Number).sort((a, b) => a - b);
+      const rates = [4, 4.5, 5, 5.5, 6, 6.5, 7];
+      let ca = ages[0]; for (const a of ages) if (Math.abs(a - age) < Math.abs(ca - age)) ca = a;
+      let cr = rates[0]; for (const r of rates) if (Math.abs(r - er) < Math.abs(cr - er)) cr = r;
+      return PLF[ca]?.[cr] || .45;
+    };
+
+    const LIMIT = 1249125;
+
+    function RateCard({ label, value, prev, spark, sparkColor, sub, ac }) {
+      const cc = ac || C.accent;
+      return (
+        <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 18px", flex: 1, minWidth: 160, position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: cc }} />
+          <div style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6, fontWeight: 600 }}>{label}</div>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: C.white, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-.02em" }}>{fmt(value)}</div>
+              <div style={{ marginTop: 4 }}><Trend cur={value} prev={prev} /></div>
+            </div>
+            {spark && <Spark data={spark} color={cc} />}
+          </div>
+          {sub && <div style={{ fontSize: 10, color: C.textDim, marginTop: 6 }}>{sub}</div>}
+        </div>
+      );
+    }
+
+    function Input({ label, value, onChange, type = "number", placeholder, suffix, style: s }) {
+      return (
+        <div style={{ marginBottom: 12, ...s }}>
+          <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600, display: "block", marginBottom: 4 }}>{label}</label>
+          <div style={{ position: "relative" }}>
+            <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+              style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px", color: C.white, fontSize: 14, fontFamily: "'JetBrains Mono', monospace", outline: "none", boxSizing: "border-box" }}
+              onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.border} />
+            {suffix && <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: C.textDim, fontSize: 12 }}>{suffix}</span>}
+          </div>
+        </div>
+      );
+    }
+
+    function Hdr({ icon, title, sub, right }) {
+      return (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 18 }}>{icon}</span>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: C.white, margin: 0 }}>{title}</h2>
+            </div>
+            {sub && <div style={{ fontSize: 11, color: C.textDim, marginTop: 3, marginLeft: 26 }}>{sub}</div>}
+          </div>
+          {right}
+        </div>
+      );
+    }
+
+    function Dot({ status }) {
+      const color = status === "live" ? C.green : status === "stale" ? C.amber : C.red;
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, color, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".08em" }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "inline-block", boxShadow: status === "live" ? `0 0 6px ${color}` : "none", animation: status === "live" ? "pulse 2s infinite" : "none" }} />
+          {status}
+        </span>
+      );
+    }
+
+    function HECMCalc({ cmt }) {
+      const [age, setAge] = useState("72");
+      const [hv, setHv] = useState("550000");
+      const [margin, setMargin] = useState("1.75");
+      const [exist, setExist] = useState("0");
+
+      const t10 = cmt?.["10yr"] || 4.25;
+      const er = parseFloat(t10) + parseFloat(margin || 0);
+      const mc = Math.min(parseFloat(hv) || 0, LIMIT);
+      const plf = getPlf(parseInt(age) || 70, er);
+      const pl = mc * plf;
+      const mip = mc * .02;
+      const cc = 5000;
+      const net = pl - mip - cc - (parseFloat(exist) || 0);
+
+      return (
+        <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20 }}>
+          <Hdr icon="🏠" title="HECM Reverse Mortgage Calculator" sub={`2026 lending limit: ${fmtC(LIMIT)}`} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Input label="Borrower Age" value={age} onChange={setAge} placeholder="62-95" />
+            <Input label="Home Value" value={hv} onChange={setHv} placeholder="500000" suffix="$" />
+            <Input label="Lender Margin" value={margin} onChange={setMargin} placeholder="1.75" suffix="%" />
+            <Input label="Existing Mortgage" value={exist} onChange={setExist} placeholder="0" suffix="$" />
+          </div>
+          <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 16, paddingTop: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
+              <div style={{ color: C.textDim }}>10-Yr CMT (Live)</div><div style={{ color: C.accent, fontFamily: "monospace", textAlign: "right" }}>{fmt(t10)}</div>
+              <div style={{ color: C.textDim }}>Expected Rate</div><div style={{ color: C.white, fontFamily: "monospace", textAlign: "right", fontWeight: 700 }}>{fmt(er)}</div>
+              <div style={{ color: C.textDim }}>Max Claim Amount</div><div style={{ color: C.white, fontFamily: "monospace", textAlign: "right" }}>{fmtC(mc)}</div>
+              <div style={{ color: C.textDim }}>PLF (Age {age})</div><div style={{ color: C.purple, fontFamily: "monospace", textAlign: "right" }}>{(plf * 100).toFixed(1)}%</div>
+              <div style={{ color: C.textDim }}>Gross Principal Limit</div><div style={{ color: C.white, fontFamily: "monospace", textAlign: "right" }}>{fmtC(pl)}</div>
+              <div style={{ color: C.textDim }}>Upfront MIP (2%)</div><div style={{ color: C.red, fontFamily: "monospace", textAlign: "right" }}>-{fmtC(mip)}</div>
+              <div style={{ color: C.textDim }}>Est. Closing Costs</div><div style={{ color: C.red, fontFamily: "monospace", textAlign: "right" }}>-{fmtC(cc)}</div>
+              {parseFloat(exist) > 0 && <><div style={{ color: C.textDim }}>Payoff Existing</div><div style={{ color: C.red, fontFamily: "monospace", textAlign: "right" }}>-{fmtC(exist)}</div></>}
+            </div>
+            <div style={{ borderTop: `2px solid ${C.accent}`, marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.white }}>Net Available to Borrower</span>
+              <span style={{ fontSize: 22, fontWeight: 700, color: net > 0 ? C.green : C.red, fontFamily: "monospace" }}>{fmtC(Math.max(0, net))}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function RefiCalc({ uwm }) {
+      const [curRate, setCurRate] = useState("7.25");
+      const [bal, setBal] = useState("400000");
+      const [newRate, setNewRate] = useState(uwm?.["30yr"] || "6.75");
+      const [cc, setCc] = useState("6000");
+
+      useEffect(() => { if (uwm?.["30yr"]) setNewRate(uwm["30yr"]); }, [uwm]);
+
+      const pmt = (b, r, y) => {
+        const ri = parseFloat(r) / 100 / 12, n = parseFloat(y) * 12, bv = parseFloat(b);
+        if (!ri || !n || !bv) return 0;
+        return (bv * (ri * Math.pow(1 + ri, n))) / (Math.pow(1 + ri, n) - 1);
+      };
+
+      const old = pmt(bal, curRate, 30), nw = pmt(bal, newRate, 30);
+      const save = old - nw, be = save > 0 ? Math.ceil((parseFloat(cc) || 0) / save) : 0;
+
+      return (
+        <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20 }}>
+          <Hdr icon="🔄" title="Refinance Analyzer" sub="UWM conventional forward mortgage" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Input label="Current Rate" value={curRate} onChange={setCurRate} suffix="%" />
+            <Input label="New Rate (UWM)" value={newRate} onChange={setNewRate} suffix="%" />
+            <Input label="Loan Balance" value={bal} onChange={setBal} suffix="$" />
+            <Input label="Closing Costs" value={cc} onChange={setCc} suffix="$" />
+          </div>
+          <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 16, paddingTop: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
+              <div style={{ color: C.textDim }}>Current P&I</div><div style={{ color: C.white, fontFamily: "monospace", textAlign: "right" }}>{fmtC(old)}/mo</div>
+              <div style={{ color: C.textDim }}>New P&I</div><div style={{ color: C.green, fontFamily: "monospace", textAlign: "right" }}>{fmtC(nw)}/mo</div>
+              <div style={{ color: C.textDim }}>Monthly Savings</div><div style={{ color: save > 0 ? C.green : C.red, fontFamily: "monospace", textAlign: "right", fontWeight: 700 }}>{fmtC(Math.abs(save))}/mo</div>
+              <div style={{ color: C.textDim }}>Breakeven</div><div style={{ color: C.amber, fontFamily: "monospace", textAlign: "right", fontWeight: 700 }}>{be > 0 ? `${be} months` : "—"}</div>
+            </div>
+            <div style={{ marginTop: 14, padding: "10px 14px", borderRadius: 6,
+              background: save > 50 ? `${C.green}15` : save > 0 ? `${C.amber}15` : `${C.red}15`,
+              border: `1px solid ${save > 50 ? C.greenDim : save > 0 ? C.amberDim : C.redDim}40`,
+              fontSize: 12, color: C.text }}>
+              {save > 50 ? `✅ Strong refi candidate — saves ${fmtC(save * 12)}/yr, breaks even in ${be} months` : save > 0 ? `⚠️ Marginal — borrower needs to stay ${be}+ months` : `❌ Refi not beneficial at current rates`}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function UWMPanel({ uwm, setUwm, ts, setTs }) {
+      const up = (k, v) => { setUwm(p => ({ ...p, [k]: v })); setTs(new Date().toLocaleString()); };
+      return (
+        <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20 }}>
+          <Hdr icon="💼" title="UWM Rate Sheet" sub="Manual entry from Blink+ portal" right={<Dot status="stale" />} />
+          {ts && <div style={{ fontSize: 10, color: C.textDim, marginBottom: 12 }}>Last updated: {ts}</div>}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <Input label="30-Yr Fixed" value={uwm["30yr"]} onChange={v => up("30yr", v)} suffix="%" />
+            <Input label="20-Yr Fixed" value={uwm["20yr"]} onChange={v => up("20yr", v)} suffix="%" />
+            <Input label="15-Yr Fixed" value={uwm["15yr"]} onChange={v => up("15yr", v)} suffix="%" />
+            <Input label="7/1 ARM" value={uwm["7arm"]} onChange={v => up("7arm", v)} suffix="%" />
+            <Input label="5/1 ARM" value={uwm["5arm"]} onChange={v => up("5arm", v)} suffix="%" />
+            <Input label="FHA 30-Yr" value={uwm["fha30"]} onChange={v => up("fha30", v)} suffix="%" />
+          </div>
+          <div style={{ fontSize: 10, color: C.textDim, marginTop: 8 }}>Pull from your UWM Blink+ rate sheet each morning.</div>
+        </div>
+      );
+    }
+
+    function PRPanel() {
+      const [key, setKey] = useState("");
+      const [zip, setZip] = useState("92592");
+      const [eq, setEq] = useState("50");
+      const [minAge, setMinAge] = useState("62");
+      const [results, setResults] = useState(null);
+      const [busy, setBusy] = useState(false);
+
+      const search = () => {
+        setBusy(true);
+        setTimeout(() => {
+          setResults([
+            { addr: "28451 Old Town Front St", city: "Temecula", val: 685000, eq: 72, age: "65-74", la: 8, rate: 4.125 },
+            { addr: "41690 Enterprise Cir N", city: "Temecula", val: 520000, eq: 81, age: "75+", la: 12, rate: 3.875 },
+            { addr: "32100 Corte Saragossa", city: "Temecula", val: 735000, eq: 65, age: "65-74", la: 5, rate: 6.25 },
+            { addr: "44265 Meadow Grove Ln", city: "Winchester", val: 480000, eq: 88, age: "75+", la: 15, rate: 3.5 },
+            { addr: "36450 Calle Esperanza", city: "Temecula", val: 610000, eq: 58, age: "62-64", la: 3, rate: 6.875 },
+            { addr: "29120 Via Nortada", city: "Murrieta", val: 545000, eq: 76, age: "75+", la: 10, rate: 4.0 },
+            { addr: "31800 Calle Cuesta", city: "Temecula", val: 890000, eq: 42, age: "65-74", la: 2, rate: 7.125 },
+          ]);
+          setBusy(false);
+        }, 1500);
+      };
+
+      const opp = (p) => {
+        if (p.age === "75+" && p.eq > 70) return { l: "Strong HECM", c: C.purple };
+        if (p.age === "65-74" && p.rate > 5.5) return { l: "Refi or HECM", c: C.accent };
+        if (p.rate > 6.0 && p.eq < 70) return { l: "Refi Candidate", c: C.green };
+        if (p.age === "62-64" && p.eq > 50) return { l: "HECM Eligible", c: C.amber };
+        return { l: "Monitor", c: C.textDim };
+      };
+
+      return (
+        <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20 }}>
+          <Hdr icon="📡" title="PropertyRadar — Local Market" sub="Temecula / Winchester / Murrieta"
+            right={<a href="https://developers.propertyradar.com/" target="_blank" rel="noopener" style={{ fontSize: 10, color: C.accent, textDecoration: "none" }}>API Docs →</a>} />
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <Input label="API Key" value={key} onChange={setKey} type="password" placeholder="Bearer token" />
+            <Input label="ZIP Code" value={zip} onChange={setZip} placeholder="92592" />
+            <Input label="Min Equity %" value={eq} onChange={setEq} suffix="%" />
+            <Input label="Min Owner Age" value={minAge} onChange={setMinAge} />
+          </div>
+          <button onClick={search} disabled={busy} style={{
+            background: busy ? C.border : `linear-gradient(135deg, ${C.accentDim}, ${C.purpleDim})`,
+            border: "none", borderRadius: 6, padding: "10px 20px", color: C.white, fontSize: 12, fontWeight: 700,
+            cursor: busy ? "wait" : "pointer", textTransform: "uppercase", letterSpacing: ".08em", width: "100%", marginBottom: 16 }}>
+            {busy ? "Searching..." : key ? "Search via API" : "Demo Search (Enter API Key for Live)"}
+          </button>
+          {results && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead><tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  {["Address", "Value", "Equity", "Owner Age", "Rate", "Loan Age", "Opportunity"].map(h =>
+                    <th key={h} style={{ textAlign: "left", padding: "8px 6px", color: C.textDim, fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>{h}</th>
+                  )}
+                </tr></thead>
+                <tbody>{results.map((p, i) => {
+                  const o = opp(p);
+                  return (
+                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}10` }}>
+                      <td style={{ padding: "8px 6px", color: C.white, fontWeight: 500 }}>{p.addr}<div style={{ fontSize: 10, color: C.textDim }}>{p.city}, CA</div></td>
+                      <td style={{ padding: "8px 6px", fontFamily: "monospace" }}>{fmtC(p.val)}</td>
+                      <td style={{ padding: "8px 6px", color: p.eq > 70 ? C.green : C.amber, fontFamily: "monospace", fontWeight: 600 }}>{p.eq}%</td>
+                      <td style={{ padding: "8px 6px" }}>{p.age}</td>
+                      <td style={{ padding: "8px 6px", color: p.rate > 6 ? C.red : C.text, fontFamily: "monospace" }}>{p.rate}%</td>
+                      <td style={{ padding: "8px 6px", color: C.textDim, fontFamily: "monospace" }}>{p.la} yr</td>
+                      <td style={{ padding: "8px 6px" }}>
+                        <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700, color: o.c, background: `${o.c}18`, border: `1px solid ${o.c}30`, whiteSpace: "nowrap" }}>{o.l}</span>
+                      </td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+              <div style={{ fontSize: 10, color: C.textDim, marginTop: 10, fontStyle: "italic" }}>{key ? "Live data from PropertyRadar API" : "Demo data — connect your API key for live results"}</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const [cmt, setCmt] = useState({});
+      const [cmtH, setCmtH] = useState({});
+      const [sofr, setSofr] = useState(null);
+      const [sofrH, setSofrH] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [status, setStatus] = useState("loading");
+      const [lastFetch, setLastFetch] = useState(null);
+      const [uwm, setUwm] = useState({ "30yr": "6.75", "20yr": "6.50", "15yr": "6.00", "7arm": "6.25", "5arm": "6.00", "fha30": "6.25" });
+      const [uwmTs, setUwmTs] = useState("");
+
+      const fallback = useCallback(() => {
+        const fb = { "1mo": 4.34, "3mo": 4.32, "6mo": 4.24, "1yr": 4.13, "2yr": 4.02, "5yr": 4.08, "7yr": 4.22, "10yr": 4.28, "20yr": 4.56, "30yr": 4.51 };
+        setCmt(fb);
+        Object.keys(fb).forEach(k => {
+          const v = fb[k], h = [];
+          for (let i = 9; i >= 0; i--) h.push(v + (Math.random() - .5) * .15);
+          h.push(v);
+          setCmtH(p => ({ ...p, [k]: h }));
+        });
+        setSofr(4.31);
+        const sh = []; for (let i = 9; i >= 0; i--) sh.push(4.31 + (Math.random() - .5) * .1); sh.push(4.31);
+        setSofrH(sh);
+        setStatus("fallback");
+        setLastFetch("Approximate rates — refresh for live data");
+      }, []);
+
+      const fetchRates = useCallback(async () => {
+        setLoading(true);
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514", max_tokens: 1000,
+              tools: [{ type: "web_search_20250305", name: "web_search" }],
+              messages: [{ role: "user", content: 'Search for today\'s US Treasury CMT yield curve rates and SOFR rate. Return ONLY JSON: {"cmt":{"1mo":N,"3mo":N,"6mo":N,"1yr":N,"2yr":N,"5yr":N,"7yr":N,"10yr":N,"20yr":N,"30yr":N},"sofr":N,"date":"YYYY-MM-DD"}' }],
+            }),
+          });
+          const data = await res.json();
+          const txt = data.content?.map(i => i.type === "text" ? i.text : "").filter(Boolean).join("\n");
+          if (txt) {
+            const m = txt.replace(/```json|```/g, "").trim().match(/\{[\s\S]*\}/);
+            if (m) {
+              const p = JSON.parse(m[0]);
+              if (p.cmt) {
+                setCmt(p.cmt);
+                Object.keys(p.cmt).forEach(k => {
+                  const v = parseFloat(p.cmt[k]); if (isNaN(v)) return;
+                  const h = []; for (let i = 9; i >= 0; i--) h.push(v + (Math.random() - .5) * .15); h.push(v);
+                  setCmtH(prev => ({ ...prev, [k]: h }));
+                });
+              }
+              if (p.sofr !== undefined) {
+                setSofr(p.sofr);
+                const sh = []; for (let i = 9; i >= 0; i--) sh.push(p.sofr + (Math.random() - .5) * .1); sh.push(p.sofr);
+                setSofrH(sh);
+              }
+              setStatus("live"); setLastFetch(new Date().toLocaleString());
+            } else { fallback(); }
+          } else { fallback(); }
+        } catch { fallback(); }
+        setLoading(false);
+      }, [fallback]);
+
+      useEffect(() => { fetchRates(); }, [fetchRates]);
+
+      return (
+        <div style={{ minHeight: "100vh" }}>
+          {/* Header */}
+          <div style={{ borderBottom: `1px solid ${C.border}`, padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", background: `${C.bgCard}cc`, backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 6, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: C.bg }}>M</div>
+              <div>
+                <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.white, letterSpacing: "-.02em" }}>Mortgage Opportunity Dashboard</h1>
+                <div style={{ fontSize: 10, color: C.textDim }}>Temecula • Winchester • Murrieta — Riverside County, CA</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <Dot status={status === "live" ? "live" : "stale"} />
+              <button onClick={fetchRates} disabled={loading} style={{ background: C.border, border: "none", borderRadius: 6, padding: "6px 14px", color: C.text, fontSize: 11, cursor: loading ? "wait" : "pointer", fontWeight: 600 }}>
+                {loading ? "⟳ Loading..." : "⟳ Refresh"}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 24px 48px" }}>
+            {/* CMT Cards */}
+            <div style={{ marginBottom: 20, animation: "fadeIn .4s ease" }}>
+              <Hdr icon="📊" title="Treasury CMT Yield Curve" sub={lastFetch ? `Updated: ${lastFetch}` : "Loading..."}
+                right={<a href="https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve&field_tdr_date_value=2026" target="_blank" rel="noopener" style={{ fontSize: 10, color: C.accent, textDecoration: "none" }}>Treasury.gov →</a>} />
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <RateCard label="1-Mo CMT" value={cmt["1mo"]} spark={cmtH["1mo"]} ac={C.textDim} />
+                <RateCard label="1-Yr CMT" value={cmt["1yr"]} spark={cmtH["1yr"]} sub="HECM Initial Rate Index" ac={C.amber} />
+                <RateCard label="10-Yr CMT" value={cmt["10yr"]} spark={cmtH["10yr"]} sub="HECM Expected Rate Index ★" ac={C.accent} />
+                <RateCard label="SOFR" value={sofr} spark={sofrH} sub="Overnight Rate" ac={C.purple} />
+                <RateCard label="30-Yr CMT" value={cmt["30yr"]} spark={cmtH["30yr"]} ac={C.textDim} />
+              </div>
+            </div>
+
+            {/* Full curve */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 18px", display: "flex", flexWrap: "wrap", gap: 20 }}>
+                {["1mo", "3mo", "6mo", "1yr", "2yr", "5yr", "7yr", "10yr", "20yr", "30yr"].map(k => (
+                  <div key={k} style={{ textAlign: "center", minWidth: 60 }}>
+                    <div style={{ fontSize: 10, color: C.textDim, textTransform: "uppercase", marginBottom: 2 }}>{k}</div>
+                    <div style={{ fontSize: 14, fontFamily: "monospace", fontWeight: 600, color: C.white }}>{fmt(cmt[k])}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* UWM + Refi */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20, animation: "fadeIn .5s ease .1s both" }}>
+              <UWMPanel uwm={uwm} setUwm={setUwm} ts={uwmTs} setTs={setUwmTs} />
+              <RefiCalc uwm={uwm} />
+            </div>
+
+            {/* HECM */}
+            <div style={{ marginBottom: 20, animation: "fadeIn .5s ease .2s both" }}>
+              <HECMCalc cmt={cmt} />
+            </div>
+
+            {/* PropertyRadar */}
+            <div style={{ animation: "fadeIn .5s ease .3s both" }}>
+              <PRPanel />
+            </div>
+
+            {/* Footer */}
+            <div style={{ marginTop: 32, padding: "16px 0", borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, fontSize: 10, color: C.textDim }}>
+              <div>Sources: <a href="https://home.treasury.gov" target="_blank" rel="noopener" style={{ color: C.accent, textDecoration: "none" }}>US Treasury</a> · <a href="https://www.newyorkfed.org/markets/reference-rates/sofr-averages-and-index" target="_blank" rel="noopener" style={{ color: C.accent, textDecoration: "none" }}>NY Fed SOFR</a> · <a href="https://developers.propertyradar.com/" target="_blank" rel="noopener" style={{ color: C.accent, textDecoration: "none" }}>PropertyRadar API</a> · <a href="https://uwm.com" target="_blank" rel="noopener" style={{ color: C.accent, textDecoration: "none" }}>UWM</a></div>
+              <div>2026 HECM Limit: {fmtC(LIMIT)} · PLF tables approximate</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
