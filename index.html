@@ -108,7 +108,7 @@
       );
     }
 
-    function Hdr({ icon, title, sub, right }) {
+    function Hdr({ icon, title, sub, right, href, linkLabel }) {
       return (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
           <div>
@@ -118,7 +118,10 @@
             </div>
             {sub && <div style={{ fontSize: 11, color: C.textDim, marginTop: 3, marginLeft: 26 }}>{sub}</div>}
           </div>
-          {right}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {href && <a href={href} target="_blank" rel="noopener" style={{ fontSize: 10, color: C.accent, textDecoration: "none", whiteSpace: "nowrap" }}>{linkLabel || "Source →"}</a>}
+            {right}
+          </div>
         </div>
       );
     }
@@ -150,7 +153,7 @@
 
       return (
         <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20 }}>
-          <Hdr icon="🏠" title="HECM Reverse Mortgage Calculator" sub={`2026 lending limit: ${fmtC(LIMIT)}`} />
+          <Hdr icon="🏠" title="HECM Reverse Mortgage Calculator" sub={`2026 lending limit: ${fmtC(LIMIT)}`} href="https://www.hud.gov/program_offices/housing/sfh/hecm" linkLabel="HUD HECM →" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Input label="Borrower Age" value={age} onChange={setAge} placeholder="62-95" />
             <Input label="Home Value" value={hv} onChange={setHv} placeholder="500000" suffix="$" />
@@ -196,7 +199,7 @@
 
       return (
         <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20 }}>
-          <Hdr icon="🔄" title="Refinance Analyzer" sub="UWM conventional forward mortgage" />
+          <Hdr icon="🔄" title="Refinance Analyzer" sub="UWM conventional forward mortgage" href="https://www.uwm.com" linkLabel="UWM →" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Input label="Current Rate" value={curRate} onChange={setCurRate} suffix="%" />
             <Input label="New Rate (UWM)" value={newRate} onChange={setNewRate} suffix="%" />
@@ -225,7 +228,7 @@
       const up = (k, v) => { setUwm(p => ({ ...p, [k]: v })); setTs(new Date().toLocaleString()); };
       return (
         <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20 }}>
-          <Hdr icon="💼" title="UWM Rate Sheet" sub="Manual entry from Blink+ portal" right={<Dot status="stale" />} />
+          <Hdr icon="💼" title="UWM Rate Sheet" sub="Manual entry from Blink+ portal" href="https://www.uwm.com/blink-plus" linkLabel="Blink+ →" right={<Dot status="stale" />} />
           {ts && <div style={{ fontSize: 10, color: C.textDim, marginBottom: 12 }}>Last updated: {ts}</div>}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
             <Input label="30-Yr Fixed" value={uwm["30yr"]} onChange={v => up("30yr", v)} suffix="%" />
